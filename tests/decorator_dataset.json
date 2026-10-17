@@ -1,0 +1,157 @@
+
+{
+  "topic": "Șablonul de proiectare Decorator",
+  "language": "ro",
+  "questions": [
+    {
+      "id": 1,
+      "question": "Ce este șablonul de proiectare Decorator?",
+      "answer": "Decorator este un șablon structural de proiectare care permite adăugarea dinamică de responsabilități sau comportamente unui obiect existent, fără modificarea structurii sale. Acesta extinde funcționalitatea obiectului prin împachetarea lui într-un alt obiect care respectă aceeași interfață."
+    },
+    {
+      "id": 2,
+      "question": "Care este scopul principal al șablonului Decorator?",
+      "answer": "Scopul principal este extinderea flexibilă a funcționalității obiectelor fără modificarea codului original și fără crearea unui număr mare de subclase pentru fiecare combinație posibilă de funcționalități."
+    },
+    {
+      "id": 3,
+      "question": "De ce este Decorator o alternativă la moștenire?",
+      "answer": "Decorator permite combinarea dinamică a funcționalităților prin împachetarea obiectelor. În loc să creeze clase separate pentru fiecare combinație, cum ar fi o prăjitură cu ciocolată și frișcă, funcționalitățile pot fi adăugate succesiv prin decoratori."
+    },
+    {
+      "id": 4,
+      "question": "Care sunt participanții principali ai șablonului Decorator?",
+      "answer": "Participanții principali sunt Component, ConcreteComponent, Decorator și ConcreteDecorator. Component definește interfața comună, ConcreteComponent implementează obiectul de bază, Decorator păstrează o referință la o componentă, iar ConcreteDecorator adaugă o funcționalitate specifică."
+    },
+    {
+      "id": 5,
+      "question": "Ce rol are Component în șablonul Decorator?",
+      "answer": "Component definește interfața comună pe care o implementează atât obiectul de bază, cât și decoratorii. Această interfață permite utilizarea uniformă a obiectelor simple și a celor decorate."
+    },
+    {
+      "id": 6,
+      "question": "Ce reprezintă ConcreteComponent?",
+      "answer": "ConcreteComponent este implementarea concretă a componentei de bază. Acesta oferă funcționalitatea inițială asupra căreia pot fi aplicate decoratori. În exemplul dat, clasa SimpleCake reprezintă ConcreteComponent."
+    },
+    {
+      "id": 7,
+      "question": "Ce rol are clasa abstractă Decorator?",
+      "answer": "Decorator implementează interfața Component și păstrează o referință la un obiect Component. Ea delegă comportamentul de bază obiectului decorat și oferă structura comună pentru decoratorii concreți."
+    },
+    {
+      "id": 8,
+      "question": "Ce este un ConcreteDecorator?",
+      "answer": "ConcreteDecorator este o clasă care extinde decoratorul de bază și adaugă o responsabilitate specifică. Poate modifica descrierea, prețul sau alt comportament prin suprascrierea metodelor componentei."
+    },
+    {
+      "id": 9,
+      "question": "Ce reprezintă interfața ICake în exemplul C#?",
+      "answer": "ICake este interfața comună pentru toate tipurile de prăjituri, simple sau decorate. Ea definește metodele GetDescription(), care returnează descrierea prăjiturii, și GetPrice(), care returnează prețul acesteia."
+    },
+    {
+      "id": 10,
+      "question": "Ce face clasa SimpleCake?",
+      "answer": "SimpleCake implementează interfața ICake și reprezintă prăjitura simplă, fără decorațiuni. Metoda GetDescription() returnează «Prăjitură simplă», iar GetPrice() returnează 20.0."
+    },
+    {
+      "id": 11,
+      "question": "Ce rol are clasa CakeDecorator?",
+      "answer": "CakeDecorator este o clasă abstractă care implementează ICake și păstrează obiectul decorat în câmpul _decoratedCake. Metodele GetDescription() și GetPrice() deleagă implicit apelurile către obiectul decorat."
+    },
+    {
+      "id": 12,
+      "question": "Cum funcționează ChocolateDecorator?",
+      "answer": "ChocolateDecorator moștenește CakeDecorator. Metoda GetDescription() adaugă textul « cu ciocolată» la descrierea existentă, iar GetPrice() adaugă 5.0 la prețul obiectului decorat."
+    },
+    {
+      "id": 13,
+      "question": "Cum funcționează CreamDecorator?",
+      "answer": "CreamDecorator moștenește CakeDecorator. Metoda GetDescription() adaugă textul « cu frișcă» la descrierea existentă, iar GetPrice() adaugă 3.5 la prețul obiectului decorat."
+    },
+    {
+      "id": 14,
+      "question": "Cum se calculează prețul unei prăjituri decorate cu ciocolată și frișcă?",
+      "answer": "Prețul se calculează prin adunarea prețului de bază cu prețurile decorațiunilor. Prăjitura simplă costă 20.0, ciocolata adaugă 5.0, iar frișca adaugă 3.5. Prețul final este 28.5 RON."
+    },
+    {
+      "id": 15,
+      "question": "Care este descrierea finală a unei prăjituri decorate mai întâi cu ciocolată și apoi cu frișcă?",
+      "answer": "Descrierea finală este «Prăjitură simplă cu ciocolată cu frișcă», deoarece CreamDecorator adaugă descrierea sa peste rezultatul returnat de ChocolateDecorator."
+    },
+    {
+      "id": 16,
+      "question": "Cum se înlănțuiesc decoratorii în C#?",
+      "answer": "Decoratorii se înlănțuiesc transmițând obiectul decorat ca argument constructorului următorului decorator. De exemplu: ICake cake = new CreamDecorator(new ChocolateDecorator(new SimpleCake()));"
+    },
+    {
+      "id": 17,
+      "question": "De ce toți decoratorii implementează aceeași interfață ca obiectul decorat?",
+      "answer": "Această regulă permite tratarea uniformă a obiectului de bază și a obiectelor decorate. Codul client poate utiliza interfața ICake fără să cunoască tipurile concrete ale decoratorilor aplicați."
+    },
+    {
+      "id": 18,
+      "question": "Ce înseamnă adăugarea dinamică a funcționalității prin Decorator?",
+      "answer": "Înseamnă că funcționalitățile pot fi selectate și combinate în momentul execuției, prin crearea și înlănțuirea obiectelor decorator, fără a modifica clasa componentei originale."
+    },
+    {
+      "id": 19,
+      "question": "Cum respectă Decorator principiul Open/Closed?",
+      "answer": "Șablonul respectă principiul Open/Closed deoarece permite extinderea comportamentului prin clase noi de decoratori, fără modificarea codului sursă al componentei existente."
+    },
+    {
+      "id": 20,
+      "question": "Care sunt principalele avantaje ale șablonului Decorator?",
+      "answer": "Principalele avantaje sunt flexibilitatea, posibilitatea combinării funcționalităților la execuție, reducerea numărului de subclase și extinderea comportamentului fără modificarea componentei originale."
+    },
+    {
+      "id": 21,
+      "question": "Care sunt dezavantajele șablonului Decorator?",
+      "answer": "Un număr mare de decoratori poate crește complexitatea codului și poate îngreuna urmărirea comportamentului. Utilizarea lui poate reprezenta over-engineering dacă există doar câteva extensii fixe și simple."
+    },
+    {
+      "id": 22,
+      "question": "Ce probleme pot apărea la utilizarea șablonului Decorator?",
+      "answer": "Problemele pot apărea dacă decoratorii nu respectă interfața componentei, dacă se creează prea multe niveluri de împachetare sau dacă înlănțuirea obiectelor face codul greu de citit și întreținut."
+    },
+    {
+      "id": 23,
+      "question": "Care sunt bunele practici pentru implementarea Decorator?",
+      "answer": "Este recomandat să se folosească nume clare pentru clasele decorator, să se definească o interfață Component suficientă pentru operațiile necesare și să se evite introducerea inutilă a prea multor niveluri de decorare."
+    },
+    {
+      "id": 24,
+      "question": "Cum ai implementa un decorator pentru caramel într-un sistem de prăjituri?",
+      "answer": "Se poate crea o clasă CaramelDecorator care moștenește CakeDecorator. Aceasta suprascrie GetDescription() pentru a adăuga « cu caramel» și GetPrice() pentru a adăuga costul caramelului. Valoarea exactă a costului trebuie stabilită separat."
+    },
+    {
+      "id": 25,
+      "question": "Când este potrivit să utilizezi șablonul Decorator?",
+      "answer": "Decorator este potrivit când trebuie să adaugi responsabilități opționale și combinabile obiectelor, iar folosirea moștenirii ar duce la multe subclase. Este mai puțin justificat când extensiile sunt puține, fixe și nu necesită combinare dinamică."
+    },
+    {
+      "id": 26,
+      "question": "Care este diferența dintre SimpleCake și ChocolateDecorator?",
+      "answer": "SimpleCake oferă funcționalitatea de bază și prețul inițial de 20.0 RON. ChocolateDecorator înfășoară un obiect ICake existent, păstrează funcționalitatea acestuia și adaugă ciocolată și un cost suplimentar de 5.0 RON."
+    },
+    {
+      "id": 27,
+      "question": "Ce rezultat se obține pentru new CreamDecorator(new ChocolateDecorator(new SimpleCake()))?",
+      "answer": "Se obține o prăjitură simplă decorată cu ciocolată și frișcă. Descrierea este «Prăjitură simplă cu ciocolată cu frișcă», iar prețul este 28.5 RON."
+    },
+    {
+      "id": 28,
+      "question": "De ce nu este necesară o clasă separată pentru fiecare combinație de decorațiuni?",
+      "answer": "Deoarece fiecare decorator poate împacheta orice obiect care respectă interfața ICake, combinațiile se construiesc prin înlănțuirea decoratorilor existenți. Astfel, nu sunt necesare clase precum ChocolateCakeWithCream sau CreamCakeWithChocolate."
+    },
+    {
+      "id": 29,
+      "question": "Ce responsabilitate are codul client în șablonul Decorator?",
+      "answer": "Codul client creează componenta de bază și o împachetează cu decoratorii doriți. El poate folosi rezultatul prin interfața comună ICake, fără să depindă de detaliile implementării fiecărui decorator."
+    },
+    {
+      "id": 30,
+      "question": "Explică pe scurt cum funcționează șablonul Decorator folosind exemplul prăjiturii.",
+      "answer": "Se creează o prăjitură simplă, apoi se împachetează cu ChocolateDecorator și CreamDecorator. Fiecare decorator adaugă o descriere și un cost, păstrând funcționalitatea anterioară. Rezultatul este o prăjitură personalizată fără a crea o clasă nouă pentru fiecare combinație."
+    }
+  ]
+}
