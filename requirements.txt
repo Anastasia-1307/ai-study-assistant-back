@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+python-multipart
+pypdf
+ollama
+chromadb
+sentence-transformers
+sqlalchemy
+passlib[argon2]
+python-jose[cryptography]
+pydantic
+pydantic-settings
+python-dotenv
+email-validator
+psycopg2-binary

@@ -5,7 +5,8 @@ import certifi
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
 import ollama
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
+from sqlalchemy.orm import Session
 
 
 from uuid import uuid4
@@ -14,10 +15,30 @@ from pypdf import PdfReader
 
 
 from fastapi import UploadFile, File, HTTPException
-from models.schemas import StudyRequest
+from models.schemas import (
+    StudyRequest,
+    UserRegister,
+    UserLogin,
+    Token,
+    UserResponse,
+    RefreshTokenRequest
+)
 from fastapi.middleware.cors import CORSMiddleware
 from database.chroma import collection
+from database.database import init_db, get_db
+from database.models import User, Log
 from services.ai_service import split_text, generate_material
+from auth.auth import (
+    validate_password,
+    get_password_hash,
+    create_access_token,
+    create_refresh_token,
+    hash_token,
+    verify_token_hash,
+    authenticate_user,
+    get_current_user
+)
+from routes import materials, progress
 
 
 app = FastAPI(title="AI Study Assistant")
@@ -28,10 +49,19 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ],
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(materials.router)
+app.include_router(progress.router)
+
+# Initialize database on startup
+@app.on_event("startup")
+def startup_event():
+    init_db()
 
 
 
@@ -42,7 +72,10 @@ def home():
 
 
 @app.post("/upload-pdf")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
     if file.content_type != "application/pdf":
         raise HTTPException(
             status_code=400,
@@ -138,7 +171,10 @@ async def upload_pdf(file: UploadFile = File(...)):
 
 
 @app.post("/search-document")
-async def search_document(question: str):
+async def search_document(
+    question: str,
+    current_user: User = Depends(get_current_user)
+):
     if not question.strip():
         raise HTTPException(
             status_code=400,
@@ -178,11 +214,16 @@ async def search_document(question: str):
 
 
 @app.post("/generate-material")
-async def generate_study_material(request: StudyRequest):
+async def generate_study_material(
+    request: StudyRequest,
+    current_user: User = Depends(get_current_user)
+):
     return generate_material(request)
 
 @app.get("/documents")
-async def get_documents():
+async def get_documents(
+    current_user: User = Depends(get_current_user)
+):
     results = collection.get(
         include=["metadatas"]
     )
@@ -208,4 +249,164 @@ async def get_documents():
         "total_chunks": len(ids),
         "total_documents": len(documents),
         "documents": list(documents.values()),
+    }
+
+
+# Auth Endpoints
+@app.post("/auth/register", response_model=UserResponse)
+async def register(user: UserRegister, db: Session = Depends(get_db)):
+    """Register a new user"""
+    # Validate password
+    is_valid, error_msg = validate_password(user.password)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+
+    # Check if email already exists
+    existing_user = db.query(User).filter(User.email == user.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email-ul este deja înregistrat")
+
+    # Create new user
+    hashed_password = get_password_hash(user.password)
+    new_user = User(
+        fname=user.fname,
+        lname=user.lname,
+        email=user.email,
+        password=hashed_password
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    # Log registration
+    log = Log(
+        user_id=new_user.id,
+        action="USER_REGISTERED",
+        details=f"User {new_user.email} registered successfully"
+    )
+    db.add(log)
+    db.commit()
+
+    return new_user
+
+
+@app.post("/auth/login", response_model=Token)
+async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
+    """Login user and return access and refresh tokens"""
+    user = authenticate_user(db, user_credentials.email, user_credentials.password)
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Email sau parolă incorectă"
+        )
+
+    # Create access token and refresh token
+    access_token = create_access_token(data={"sub": str(user.id)})
+    refresh_token = create_refresh_token(data={"sub": str(user.id)})
+
+    # Hash and store refresh token
+    refresh_token_hash = hash_token(refresh_token)
+    user.refresh_token_hash = refresh_token_hash
+    db.commit()
+
+    # Log login
+    log = Log(
+        user_id=user.id,
+        action="USER_LOGGED_IN",
+        details=f"User {user.email} logged in"
+    )
+    db.add(log)
+    db.commit()
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
+
+@app.get("/auth/me", response_model=UserResponse)
+async def get_me(current_user: User = Depends(get_current_user)):
+    """Get current user info"""
+    return current_user
+
+
+@app.post("/auth/logout")
+async def logout(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Logout user (invalidate refresh token)"""
+    # Clear refresh token hash
+    current_user.refresh_token_hash = None
+    db.commit()
+
+    # Log logout
+    log = Log(
+        user_id=current_user.id,
+        action="USER_LOGGED_OUT",
+        details=f"User {current_user.email} logged out"
+    )
+    db.add(log)
+    db.commit()
+
+    return {"message": "Deconectare reușită"}
+
+
+@app.post("/auth/refresh", response_model=Token)
+async def refresh_token(
+    request: RefreshTokenRequest,
+    db: Session = Depends(get_db)
+):
+    """Refresh access token using refresh token"""
+    try:
+        payload = jwt.decode(request.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: int = payload.get("sub")
+        token_type: str = payload.get("type")
+
+        if user_id is None or token_type != "refresh":
+            raise HTTPException(
+                status_code=401,
+                detail="Token de refresh invalid"
+            )
+    except JWTError:
+        raise HTTPException(
+            status_code=401,
+            detail="Token de refresh invalid"
+        )
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Utilizator negăsit"
+        )
+
+    # Verify refresh token hash
+    if not user.refresh_token_hash or not verify_token_hash(request.refresh_token, user.refresh_token_hash):
+        raise HTTPException(
+            status_code=401,
+            detail="Token de refresh invalid sau expirat"
+        )
+
+    # Create new tokens
+    new_access_token = create_access_token(data={"sub": str(user.id)})
+    new_refresh_token = create_refresh_token(data={"sub": str(user.id)})
+
+    # Update refresh token hash
+    new_refresh_token_hash = hash_token(new_refresh_token)
+    user.refresh_token_hash = new_refresh_token_hash
+    db.commit()
+
+    # Log token refresh
+    log = Log(
+        user_id=user.id,
+        action="TOKEN_REFRESHED",
+        details=f"Refresh token for user {user.email}"
+    )
+    db.add(log)
+    db.commit()
+
+    return {
+        "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
+        "token_type": "bearer"
     }
