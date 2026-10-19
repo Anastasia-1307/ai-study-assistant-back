@@ -202,8 +202,10 @@ async def get_study_stats(
             "total_hours": 0,
             "average_session_minutes": 0,
             "by_subject": {},
-            "last_7_days": 0,
-            "last_30_days": 0
+            "last_7_days_minutes": 0,
+            "last_7_days_hours": 0,
+            "last_30_days_minutes": 0,
+            "last_30_days_hours": 0
         }
 
     # Calculate totals

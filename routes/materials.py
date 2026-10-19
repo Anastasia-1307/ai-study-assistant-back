@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from database.database import get_db
 from database.models import User, Note, Course, Assignment, Schedule, Material, Log
@@ -587,6 +588,29 @@ async def get_file(
     if not material:
         raise HTTPException(status_code=404, detail="Fișier negăsit")
     return material
+
+
+@router.get("/files/{file_id}/download")
+async def download_file(
+    file_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Download one of the current user's uploaded files."""
+    material = db.query(Material).filter(
+        Material.id == file_id,
+        Material.user_id == current_user.id
+    ).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Fișier negăsit")
+    if not os.path.isfile(material.file_path):
+        raise HTTPException(status_code=404, detail="Fișierul nu mai este disponibil")
+
+    return FileResponse(
+        path=material.file_path,
+        filename=material.filename,
+        media_type="application/octet-stream"
+    )
 
 
 @router.put("/files/{file_id}", response_model=MaterialResponse)

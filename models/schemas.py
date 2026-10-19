@@ -164,7 +164,7 @@ class ScheduleResponse(BaseModel):
 # Achievement Schemas
 class AchievementCreate(BaseModel):
     subject: str = Field(..., min_length=1, max_length=255)
-    grade: float = Field(..., ge=0, le=10)
+    grade: int = Field(..., ge=1, le=10)
     date: Optional[datetime] = None
     notes: Optional[str] = None
 

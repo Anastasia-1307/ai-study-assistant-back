@@ -4,7 +4,10 @@ from database.models import Base
 import os
 from dotenv import load_dotenv
 
-load_dotenv()  # încarcă variabilele din .env
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env.local")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
