@@ -5,7 +5,7 @@ import certifi
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
 import ollama
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Response
 from sqlalchemy.orm import Session
 
 
@@ -19,9 +19,7 @@ from models.schemas import (
     StudyRequest,
     UserRegister,
     UserLogin,
-    Token,
-    UserResponse,
-    RefreshTokenRequest
+    UserResponse
 )
 from fastapi.middleware.cors import CORSMiddleware
 from database.chroma import collection
@@ -36,7 +34,9 @@ from auth.auth import (
     hash_token,
     verify_token_hash,
     authenticate_user,
-    get_current_user
+    get_current_user,
+    set_auth_cookies,
+    clear_auth_cookies
 )
 from routes import materials, progress
 
@@ -291,9 +291,13 @@ async def register(user: UserRegister, db: Session = Depends(get_db)):
     return new_user
 
 
-@app.post("/auth/login", response_model=Token)
-async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
-    """Login user and return access and refresh tokens"""
+@app.post("/auth/login")
+async def login(
+    user_credentials: UserLogin,
+    response: Response,
+    db: Session = Depends(get_db)
+):
+    """Login user and set httpOnly cookies with access and refresh tokens"""
     user = authenticate_user(db, user_credentials.email, user_credentials.password)
     if not user:
         raise HTTPException(
@@ -305,7 +309,7 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
     access_token = create_access_token(data={"sub": str(user.id)})
     refresh_token = create_refresh_token(data={"sub": str(user.id)})
 
-    # Hash and store refresh token
+    # Hash and store refresh token in database
     refresh_token_hash = hash_token(refresh_token)
     user.refresh_token_hash = refresh_token_hash
     db.commit()
@@ -319,11 +323,10 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
     db.add(log)
     db.commit()
 
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer"
-    }
+    # Set httpOnly cookies with hashed tokens
+    set_auth_cookies(response, access_token, refresh_token)
+
+    return {"message": "Autentificare reușită"}
 
 
 @app.get("/auth/me", response_model=UserResponse)
@@ -333,9 +336,13 @@ async def get_me(current_user: User = Depends(get_current_user)):
 
 
 @app.post("/auth/logout")
-async def logout(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Logout user (invalidate refresh token)"""
-    # Clear refresh token hash
+async def logout(
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Logout user (invalidate refresh token and clear cookies)"""
+    # Clear refresh token hash from database
     current_user.refresh_token_hash = None
     db.commit()
 
@@ -348,17 +355,30 @@ async def logout(current_user: User = Depends(get_current_user), db: Session = D
     db.add(log)
     db.commit()
 
+    # Clear httpOnly cookies
+    clear_auth_cookies(response)
+
     return {"message": "Deconectare reușită"}
 
 
-@app.post("/auth/refresh", response_model=Token)
+@app.post("/auth/refresh")
 async def refresh_token(
-    request: RefreshTokenRequest,
+    request: Request,
+    response: Response,
     db: Session = Depends(get_db)
 ):
-    """Refresh access token using refresh token"""
+    """Refresh access token using refresh token from cookie"""
+    from auth.auth import get_refresh_token_from_cookie
+
+    refresh_token = get_refresh_token_from_cookie(request)
+    if not refresh_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Token de refresh lipsă"
+        )
+
     try:
-        payload = jwt.decode(request.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: int = payload.get("sub")
         token_type: str = payload.get("type")
 
@@ -381,7 +401,7 @@ async def refresh_token(
         )
 
     # Verify refresh token hash
-    if not user.refresh_token_hash or not verify_token_hash(request.refresh_token, user.refresh_token_hash):
+    if not user.refresh_token_hash or not verify_token_hash(refresh_token, user.refresh_token_hash):
         raise HTTPException(
             status_code=401,
             detail="Token de refresh invalid sau expirat"
@@ -391,7 +411,7 @@ async def refresh_token(
     new_access_token = create_access_token(data={"sub": str(user.id)})
     new_refresh_token = create_refresh_token(data={"sub": str(user.id)})
 
-    # Update refresh token hash
+    # Update refresh token hash in database
     new_refresh_token_hash = hash_token(new_refresh_token)
     user.refresh_token_hash = new_refresh_token_hash
     db.commit()
@@ -405,8 +425,7 @@ async def refresh_token(
     db.add(log)
     db.commit()
 
-    return {
-        "access_token": new_access_token,
-        "refresh_token": new_refresh_token,
-        "token_type": "bearer"
-    }
+    # Set new cookies
+    set_auth_cookies(response, new_access_token, new_refresh_token)
+
+    return {"message": "Token reîmprospătat cu succes"}

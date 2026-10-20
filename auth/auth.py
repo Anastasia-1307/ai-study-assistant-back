@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from database.database import get_db
@@ -33,7 +33,17 @@ pwd_context = CryptContext(
     argon2__hash_len=32,
     argon2__salt_len=16
 )
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
+
+
+def get_token_from_cookie(request: Request) -> Optional[str]:
+    """Get access token from httpOnly cookie"""
+    return request.cookies.get("access_token")
+
+
+def get_refresh_token_from_cookie(request: Request) -> Optional[str]:
+    """Get refresh token from httpOnly cookie"""
+    return request.cookies.get("refresh_token")
 
 
 # Password validation regex
@@ -101,16 +111,63 @@ def verify_token_hash(token: str, token_hash: str) -> bool:
     return pwd_context.verify(token, token_hash)
 
 
+def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
+    """Set httpOnly, secure cookies for access and refresh tokens"""
+    access_max_age = ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    refresh_max_age = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        max_age=access_max_age,
+        expires=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+        path="/",
+        domain=None,
+        secure=True,
+        httponly=True,
+        samesite="lax"
+    )
+
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        max_age=refresh_max_age,
+        expires=timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        path="/",
+        domain=None,
+        secure=True,
+        httponly=True,
+        samesite="lax"
+    )
+
+
+def clear_auth_cookies(response: Response):
+    """Clear auth cookies"""
+    response.delete_cookie(key="access_token", path="/")
+    response.delete_cookie(key="refresh_token", path="/")
+
+
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
     db: Session = Depends(get_db)
 ) -> User:
-    """Get the current authenticated user from JWT token"""
+    """Get the current authenticated user from JWT token in cookie"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Nu s-a putut valida credențialele",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    # Try to get token from cookie first, then from Authorization header
+    token = get_token_from_cookie(request)
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+
+    if not token:
+        raise credentials_exception
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: int = payload.get("sub")
