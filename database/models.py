@@ -149,3 +149,13 @@ class ImprovementArea(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="improvement_areas")
+
+
+class LoginAttempt(Base):
+    __tablename__ = "login_attempts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ip_address = Column(String(45), nullable=False, index=True)  # IPv4 or IPv6
+    attempt_count = Column(Integer, default=1, nullable=False)
+    blocked_until = Column(DateTime, nullable=True)
+    last_attempt_at = Column(DateTime, default=datetime.utcnow, nullable=False)

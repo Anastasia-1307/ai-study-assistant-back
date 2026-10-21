@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from database.database import get_db
-from database.models import User
+from database.models import User, LoginAttempt
 import re
 from uuid import uuid4
 
@@ -190,3 +190,120 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
     if not verify_password(password, user.password):
         return None
     return user
+
+
+def get_client_ip(request: Request) -> str:
+    """Get client IP address from request, handling proxies"""
+    # Check for forwarded headers (reverse proxy)
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        # Take the first IP in the chain
+        return forwarded_for.split(",")[0].strip()
+
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+
+    # Fallback to direct connection
+    if request.client:
+        return request.client.host
+
+    return "unknown"
+
+
+def get_block_duration(attempt_count: int) -> Optional[timedelta]:
+    """Calculate block duration based on attempt count"""
+    if attempt_count == 5:
+        return timedelta(minutes=1)
+    elif attempt_count == 6:
+        return timedelta(minutes=2)
+    elif attempt_count == 7:
+        return timedelta(minutes=5)
+    elif attempt_count == 8:
+        return timedelta(minutes=15)
+    elif attempt_count == 9:
+        return timedelta(minutes=30)
+    elif attempt_count >= 10:
+        return timedelta(hours=1)
+    return None
+
+
+def check_ip_blocked(db: Session, ip_address: str):
+    """Returnează (is_blocked, blocked_until, remaining_seconds)."""
+
+    attempt = (
+        db.query(LoginAttempt)
+        .filter(LoginAttempt.ip_address == ip_address)
+        .first()
+    )
+
+    if not attempt or not attempt.blocked_until:
+        return False, None, None
+
+    now = datetime.utcnow()
+    blocked_until = attempt.blocked_until
+
+    if blocked_until > now:
+        remaining_seconds = max(
+            1,
+            int((blocked_until - now).total_seconds() + 0.999)
+        )
+        return True, blocked_until, remaining_seconds
+
+    # Blocarea a expirat, dar păstrăm attempt_count
+    # pentru a aplica o blocare progresivă la următorul eșec.
+    attempt.blocked_until = None
+    db.commit()
+
+    return False, None, None
+
+
+def record_failed_login(db: Session, ip_address: str):
+    """Înregistrează eșecul și aplică blocarea dacă este necesar."""
+
+    attempt = (
+        db.query(LoginAttempt)
+        .filter(LoginAttempt.ip_address == ip_address)
+        .first()
+    )
+
+    now = datetime.utcnow()
+
+    if not attempt:
+        attempt = LoginAttempt(
+            ip_address=ip_address,
+            attempt_count=0,
+            last_attempt_at=now,
+        )
+        db.add(attempt)
+        db.flush()
+
+    # Nu resetăm contorul doar pentru că blocarea a expirat.
+    attempt.attempt_count += 1
+    attempt.last_attempt_at = now
+
+    block_duration = get_block_duration(attempt.attempt_count)
+
+    if block_duration:
+        attempt.blocked_until = now + block_duration
+        print(
+            f"IP blocked: {ip_address}; "
+            f"attempts={attempt.attempt_count}; "
+            f"duration={block_duration}"
+        )
+    else:
+        attempt.blocked_until = None
+        print(
+            f"Failed login: {ip_address}; "
+            f"attempts={attempt.attempt_count}"
+        )
+
+    db.commit()
+
+def reset_login_attempts(db: Session, ip_address: str):
+    """Reset login attempts for IP after successful login"""
+    attempt = db.query(LoginAttempt).filter(LoginAttempt.ip_address == ip_address).first()
+    if attempt:
+        attempt.attempt_count = 0
+        attempt.blocked_until = None
+        db.commit()

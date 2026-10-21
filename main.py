@@ -5,10 +5,10 @@ import certifi
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
 import ollama
-from fastapi import FastAPI, Depends, Response
+from fastapi import FastAPI, Depends, Response, Request
 from sqlalchemy.orm import Session
 
-
+from datetime import datetime
 from uuid import uuid4
 from io import BytesIO
 from pypdf import PdfReader
@@ -36,7 +36,11 @@ from auth.auth import (
     authenticate_user,
     get_current_user,
     set_auth_cookies,
-    clear_auth_cookies
+    clear_auth_cookies,
+    get_client_ip,
+    check_ip_blocked,
+    record_failed_login,
+    reset_login_attempts
 )
 from routes import materials, progress
 
@@ -295,15 +299,65 @@ async def register(user: UserRegister, db: Session = Depends(get_db)):
 async def login(
     user_credentials: UserLogin,
     response: Response,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Login user and set httpOnly cookies with access and refresh tokens"""
-    user = authenticate_user(db, user_credentials.email, user_credentials.password)
+    # Get client IP address
+    ip_address = get_client_ip(request)
+    print(f"Login attempt from IP: {ip_address}")
+    print(f"Current server time: {datetime.utcnow()}")
+
+    # Check if IP is blocked
+    is_blocked, blocked_until, remaining_seconds = check_ip_blocked(db, ip_address)
+    print(f"IP blocked: {is_blocked}, blocked_until: {blocked_until}, remaining: {remaining_seconds}")
+
+    if is_blocked:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "message": "Prea multe încercări nereușite",
+                "blocked_until": blocked_until.isoformat() + "Z",
+                "remaining_seconds": remaining_seconds
+            }
+        )
+
+    
+    user = authenticate_user(
+        db,
+        user_credentials.email,
+        user_credentials.password
+    )
+
     if not user:
+        # Înregistrăm încercarea nereușită.
+        record_failed_login(db, ip_address)
+
+        # Verificăm dacă această încercare a declanșat blocarea.
+        is_blocked, blocked_until, remaining_seconds = check_ip_blocked(
+            db, ip_address
+        )
+
+        if is_blocked:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "message": "Prea multe încercări nereușite. "
+                               "Autentificarea este blocată temporar.",
+                    "blocked_until": blocked_until.isoformat() + "Z",
+                    "remaining_seconds": remaining_seconds
+                }
+            )
+
+        # Dacă pragul de blocare nu a fost atins.
         raise HTTPException(
             status_code=401,
             detail="Email sau parolă incorectă"
         )
+
+
+    # Reset login attempts on successful login
+    reset_login_attempts(db, ip_address)
 
     # Create access token and refresh token
     access_token = create_access_token(data={"sub": str(user.id)})
@@ -318,7 +372,7 @@ async def login(
     log = Log(
         user_id=user.id,
         action="USER_LOGGED_IN",
-        details=f"User {user.email} logged in"
+        details=f"User {user.email} logged in from IP: {ip_address}"
     )
     db.add(log)
     db.commit()
