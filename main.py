@@ -7,11 +7,17 @@ os.environ["SSL_CERT_FILE"] = certifi.where()
 import ollama
 from fastapi import FastAPI, Depends, Response, Request
 from sqlalchemy.orm import Session
+from jose import JWTError, jwt
+from dotenv import load_dotenv
 
 from datetime import datetime
 from uuid import uuid4
 from io import BytesIO
 from pypdf import PdfReader
+
+load_dotenv()
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
 
 
 from fastapi import UploadFile, File, HTTPException
@@ -42,7 +48,7 @@ from auth.auth import (
     record_failed_login,
     reset_login_attempts
 )
-from routes import materials, progress
+from routes import materials, progress, conversations
 
 
 app = FastAPI(title="AI Study Assistant")
@@ -52,6 +58,10 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -61,6 +71,7 @@ app.add_middleware(
 # Include routers
 app.include_router(materials.router)
 app.include_router(progress.router)
+app.include_router(conversations.router)
 
 # Initialize database on startup
 @app.on_event("startup")
@@ -220,9 +231,53 @@ async def search_document(
 @app.post("/generate-material")
 async def generate_study_material(
     request: StudyRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    return generate_material(request)
+    result = generate_material(request)
+
+    # If conversation_id is provided, save messages to the conversation
+    if request.conversation_id:
+        from database.models import Conversation, Message
+        from models.schemas import MessageCreate
+
+        # Verify conversation belongs to user
+        conversation = db.query(Conversation).filter(
+            Conversation.id == request.conversation_id,
+            Conversation.user_id == current_user.id
+        ).first()
+
+        if conversation:
+            # Save user message
+            user_message = Message(
+                conversation_id=request.conversation_id,
+                role="user",
+                content=request.text
+            )
+            db.add(user_message)
+
+            # Save assistant response
+            assistant_message = Message(
+                conversation_id=request.conversation_id,
+                role="assistant",
+                content=result.get("result", "")
+            )
+            db.add(assistant_message)
+
+            # Update conversation timestamp
+            conversation.updated_at = datetime.utcnow()
+
+            # Auto-generate title from first user message
+            existing_messages = db.query(Message).filter(
+                Message.conversation_id == request.conversation_id
+            ).count()
+            if existing_messages == 0:
+                title = request.text[:50] + "..." if len(request.text) > 50 else request.text
+                conversation.title = title
+
+            db.commit()
+
+    return result
 
 @app.get("/documents")
 async def get_documents(

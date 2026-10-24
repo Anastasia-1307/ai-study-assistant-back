@@ -1,11 +1,12 @@
 from pydantic import BaseModel, Field, EmailStr
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
 class StudyRequest(BaseModel):
     text: str = Field(min_length=20, max_length=15000)
     document_id: str | None = None
+    conversation_id: int | None = None
 
 
 # Auth Schemas
@@ -208,6 +209,60 @@ class ImprovementAreaResponse(BaseModel):
     id: int
     area: str
     description: Optional[str]
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Conversation Schemas
+class ConversationCreate(BaseModel):
+    title: Optional[str] = Field(default="Conversație nouă", max_length=255)
+
+
+class ConversationUpdate(BaseModel):
+    title: Optional[str] = Field(None, max_length=255)
+    is_pinned: Optional[bool] = None
+
+
+class ConversationResponse(BaseModel):
+    id: int
+    title: str
+    is_pinned: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Message Schemas
+class MessageCreate(BaseModel):
+    role: str = Field(..., min_length=1, max_length=20)
+    content: str = Field(..., min_length=1)
+
+
+class MessageResponse(BaseModel):
+    id: int
+    role: str
+    content: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ConversationWithMessagesResponse(BaseModel):
+    id: int
+    title: str
+    is_pinned: bool
+    created_at: datetime
+    updated_at: datetime
+    messages: List[MessageResponse]
+
+    class Config:
+        from_attributes = True
     status: str
     created_at: datetime
 

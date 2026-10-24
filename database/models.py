@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Float, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -27,6 +27,7 @@ class User(Base):
     achievements = relationship("Achievement", back_populates="user", cascade="all, delete-orphan")
     study_sessions = relationship("StudySession", back_populates="user", cascade="all, delete-orphan")
     improvement_areas = relationship("ImprovementArea", back_populates="user", cascade="all, delete-orphan")
+    conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
 
 
 class Material(Base):
@@ -159,3 +160,29 @@ class LoginAttempt(Base):
     attempt_count = Column(Integer, default=1, nullable=False)
     blocked_until = Column(DateTime, nullable=True)
     last_attempt_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String(255), nullable=False, default="Conversație nouă")
+    is_pinned = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="conversations")
+    messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
+    role = Column(String(20), nullable=False)  # "user" or "assistant"
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    conversation = relationship("Conversation", back_populates="messages")
